@@ -80,7 +80,8 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
 void world2car(std::vector<double> ptsx, std::vector<double> ptsy, Eigen::VectorXd &ptsxc, Eigen::VectorXd &ptsyc,
                double x, double y, double phi)
 {
-  double xc, yc;
+  // convert waypoints from map coordinate to car coordinate
+  double xc, yc; // car coordinate in map 
   double xm, ym;
   for (int i = 0; i < ptsx.size(); i++)
   {
@@ -124,11 +125,11 @@ int main()
           double v = j[1]["speed"];
           v = v * mph2mps;
           double steer = j[1]["steering_angle"];
-          double throttle = j[1]["throttle"];
-          double a0 = 19.8*(throttle - 0.019*v);
+          double throttle = j[1]["throttle"]; 
+          double a0 = 19.8*(throttle - 0.019*v);  // convert throttle to accelaration (m/s^2)
 
-          Eigen::VectorXd ptsxc(ptsx.size());
-          Eigen::VectorXd ptsyc(ptsy.size());
+          Eigen::VectorXd ptsxc(ptsx.size()); // waypoints in car coordinate
+          Eigen::VectorXd ptsyc(ptsy.size()); // waypoints in car coordinate
           world2car(ptsx, ptsy, ptsxc, ptsyc, px, py, psi);
           auto coeffs = polyfit(ptsxc, ptsyc, 3);
           // double cte = polyeval(coeffs, 0);
@@ -136,6 +137,7 @@ int main()
           double epsi = -atan(coeffs[1]);
           Eigen::VectorXd state(6);
 
+          // run the state prediction model for 0.1s (control delay)
           double delay = 0.1;
           double x_act = v * delay;
           double y_act = 0;
@@ -148,15 +150,11 @@ int main()
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
 
-          /*
-          * TODO: Calculate steering angle and throttle using MPC.
-          *
-          * Both are in between [-1, 1].
-          *
-          */
+    
 
           double steer_value = steer / deg2rad(25);
           double throttle_value = throttle;
+          // update the steer_value and throttle value based on MPC. if solving failed, keep the current value
           mpc.Solve(state, coeffs, mpc_x_vals, mpc_y_vals, steer_value, throttle_value);
 
           json msgJson;
@@ -180,6 +178,7 @@ int main()
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
+          // display the waypoints
           for (int i = 0; i < 50; i++)
           {
             double xx = 0.2* i * v;

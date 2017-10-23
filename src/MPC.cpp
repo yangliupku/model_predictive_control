@@ -8,7 +8,7 @@ using CppAD::AD;
 // TODO: Set the timestep length and duration
 size_t N = 20;
 double dt = 0.3;
-
+// define the weights used in objective function and target velocity
 const double Lf = 2.67;
 const double ref_v = 40;
 const double w_cte = 20.0;
@@ -57,9 +57,9 @@ public:
     // Minimize the use of actuators.
     for (int t = 0; t < N - 1; t++)
     {
-      // fg[0] += w_delta*CppAD::pow(vars[delta_start + t], 2);
-      fg[0] += w_delta * CppAD::pow(vars[delta_start + t] * vars[v_start + t], 2);
-
+      // steering angle should reduce while driving fast
+      fg[0] += w_delta * CppAD::pow(vars[delta_start + t] * vars[v_start + t], 2); 
+      
       fg[0] += w_a * CppAD::pow(vars[a_start + t], 2);
     }
 
@@ -108,7 +108,8 @@ public:
 
       // Only consider the actuation at time t.
       AD<double> delta0 = vars[delta_start + t - 1];
-      // AD<double> a0 = vars[a_start + t - 1];
+ 
+      // model between throttle and accelaration obtained from experimenting in simulator
       AD<double> a0 = 19.8 * (vars[a_start + t - 1] - 0.019 * v0);
       AD<double> f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2] * x0 * x0 + coeffs[3] * x0 * x0 * x0;
       AD<double> psides0 = CppAD::atan(coeffs[1] + 2 * x0 * coeffs[2] + 3 * x0 * x0 * coeffs[3]);
@@ -272,6 +273,7 @@ void MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs, std::vector<doubl
 
   if (ok)
   {
+    // only update the throttle and steer if the solving is success.
     auto cost = solution.obj_value;
     std::cout << "Cost " << cost << std::endl;
 
