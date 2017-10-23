@@ -7,20 +7,17 @@ using CppAD::AD;
 
 // TODO: Set the timestep length and duration
 size_t N = 20;
-double dt = 0.2;
+double dt = 0.3;
 
-// This value assumes the model presented in the classroom is used.
-//
-// It was obtained by measuring the radius formed by running the vehicle in the
-// simulator around in a circle with a constant steering angle and velocity on a
-// flat terrain.
-//
-// Lf was tuned until the the radius formed by the simulating the model
-// presented in the classroom matched the previous radius.
-//
-// This is the length from front to CoG that has a similar radius.
 const double Lf = 2.67;
-double ref_v = 20;
+const double ref_v = 40;
+const double w_cte = 20.0;
+const double w_epsi = 5.0;
+const double w_v = 0.1;
+const double w_delta = 1;
+const double w_a = 1.0;
+const double w_ddelta = 100.0;
+const double w_da = 1.0;
 
 size_t x_start = 0;
 size_t y_start = x_start + N;
@@ -52,23 +49,25 @@ public:
     // The part of the cost based on the reference state.
     for (int t = 0; t < N; t++)
     {
-      fg[0] += CppAD::pow(vars[cte_start + t], 2);
-      fg[0] += 10*CppAD::pow(vars[epsi_start + t], 2);
-      fg[0] += 0.5*CppAD::pow(vars[v_start + t] - ref_v, 2);
+      fg[0] += w_cte * CppAD::pow(vars[cte_start + t], 2);
+      fg[0] += w_epsi * CppAD::pow(vars[epsi_start + t], 2);
+      fg[0] += w_v * CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
 
     // Minimize the use of actuators.
     for (int t = 0; t < N - 1; t++)
     {
-      fg[0] += 10*CppAD::pow(vars[delta_start + t], 2);
-      fg[0] += CppAD::pow(vars[a_start + t], 2);
+      // fg[0] += w_delta*CppAD::pow(vars[delta_start + t], 2);
+      fg[0] += w_delta * CppAD::pow(vars[delta_start + t] * vars[v_start + t], 2);
+
+      fg[0] += w_a * CppAD::pow(vars[a_start + t], 2);
     }
 
     // Minimize the value gap between sequential actuations.
     for (int t = 0; t < N - 2; t++)
     {
-      fg[0] += 10*CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
-      fg[0] += 0.1*CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+      fg[0] += w_ddelta * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
+      fg[0] += w_da * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
 
     //
@@ -109,8 +108,8 @@ public:
 
       // Only consider the actuation at time t.
       AD<double> delta0 = vars[delta_start + t - 1];
-      AD<double> a0 = vars[a_start + t - 1];
-
+      // AD<double> a0 = vars[a_start + t - 1];
+      AD<double> a0 = 19.8 * (vars[a_start + t - 1] - 0.019 * v0);
       AD<double> f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2] * x0 * x0 + coeffs[3] * x0 * x0 * x0;
       AD<double> psides0 = CppAD::atan(coeffs[1] + 2 * x0 * coeffs[2] + 3 * x0 * x0 * coeffs[3]);
 
@@ -142,7 +141,7 @@ public:
 MPC::MPC() {}
 MPC::~MPC() {}
 
-vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs, std::vector<double> &mpc_x, std::vector<double> &mpc_y)
+void MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs, std::vector<double> &mpc_x, std::vector<double> &mpc_y, double &delta, double &a)
 {
   bool ok = true;
   size_t i;
@@ -239,7 +238,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs, std::ve
   // options for IPOPT solver
   std::string options;
   // Uncomment this if you'd like more print information
-  options += "Integer print_level  0\n";
+  options += "Integer print_level  2\n";
   // NOTE: Setting sparse to true allows the solver to take advantage
   // of sparse routines, this makes the computation MUCH FASTER. If you
   // can uncomment 1 of these and see if it makes a difference or not but
@@ -249,7 +248,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs, std::ve
   options += "Sparse  true        reverse\n";
   // NOTE: Currently the solver has a maximum time limit of 0.5 seconds.
   // Change this as you see fit.
-  options += "Numeric max_cpu_time          1.0\n";
+  options += "Numeric max_cpu_time          0.5\n";
 
   // place to return solution
   CppAD::ipopt::solve_result<Dvector> solution;
@@ -264,19 +263,26 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs, std::ve
   std::cout << "status:" << ok << '\n';
 
   // Cost
-  auto cost = solution.obj_value;
-  std::cout << "Cost " << cost << std::endl;
 
   // TODO: Return the first actuator values. The variables can be accessed with
   // `solution.x[i]`.
   //
   // {...} is shorthand for creating a vector, so auto x1 = {1.0,2.0}
   // creates a 2 element double vector.
-  for (int t = 1; t < N; t++)
+
+  if (ok)
   {
-    // The state at time t+1 .
-    mpc_x.push_back(solution.x[x_start + t]);
-    mpc_y.push_back(solution.x[y_start + t]);
+    auto cost = solution.obj_value;
+    std::cout << "Cost " << cost << std::endl;
+
+    delta = solution.x[delta_start];
+    a = solution.x[a_start];
+    for (int t = 1; t < N; t++)
+    {
+      // The state at time t+1 .
+      mpc_x.push_back(solution.x[x_start + t]);
+      mpc_y.push_back(solution.x[y_start + t]);
+    }
   }
-  return {solution.x[delta_start], solution.x[a_start]};
+  return;
 }

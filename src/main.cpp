@@ -10,6 +10,7 @@
 #include "json.hpp"
 
 const double L = 2.67;
+const double mph2mps = 0.44704;
 // for convenience
 using json = nlohmann::json;
 
@@ -121,11 +122,10 @@ int main()
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
-          v = v * 0.44704;
+          v = v * mph2mps;
           double steer = j[1]["steering_angle"];
           double throttle = j[1]["throttle"];
-          throttle = throttle*2.23;
-
+          double a0 = 19.8*(throttle - 0.019*v);
 
           Eigen::VectorXd ptsxc(ptsx.size());
           Eigen::VectorXd ptsyc(ptsy.size());
@@ -136,28 +136,28 @@ int main()
           double epsi = -atan(coeffs[1]);
           Eigen::VectorXd state(6);
 
-          double dt = 0.1;
-          double x_act = v * dt;
+          double delay = 0.1;
+          double x_act = v * delay;
           double y_act = 0;
-          double psi_act = -v / L * steer * dt;
-          double v_act = v + throttle * dt;
-          double cte_act = cte + v * sin(epsi) * dt;
-          double epsi_act = epsi - v / L * steer * dt;
+          double psi_act = -v / L * steer * delay;
+          double v_act = v + a0 * delay;
+          double cte_act = cte + v * sin(epsi) * delay;
+          double epsi_act = epsi - v / L * steer * delay;
           state << x_act, y_act, psi_act, v_act, cte_act, epsi_act;
 
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
 
-          auto vars = mpc.Solve(state, coeffs, mpc_x_vals, mpc_y_vals);
           /*
           * TODO: Calculate steering angle and throttle using MPC.
           *
           * Both are in between [-1, 1].
           *
           */
-          double steer_value = vars[0] / deg2rad(25);
-          std::cout<<"steer value: "<<steer_value<<'\n';
-          double throttle_value = vars[1]*0.447;
+
+          double steer_value = steer / deg2rad(25);
+          double throttle_value = throttle;
+          mpc.Solve(state, coeffs, mpc_x_vals, mpc_y_vals, steer_value, throttle_value);
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -180,9 +180,9 @@ int main()
           //Display the waypoints/reference line
           vector<double> next_x_vals;
           vector<double> next_y_vals;
-          for (int i = 0; i < 10; i++)
+          for (int i = 0; i < 50; i++)
           {
-            double xx = 10 * i;
+            double xx = 0.2* i * v;
             double yy = polyeval(coeffs, xx);
             next_x_vals.push_back(xx);
             next_y_vals.push_back(yy);
@@ -196,6 +196,7 @@ int main()
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
+          std::cout << "time: " << double(clock()) / CLOCKS_PER_SEC << '\n';
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
